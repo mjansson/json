@@ -131,7 +131,7 @@ Useful with json_string_equal function: json_string_equal(myptr, mylength, JSON_
 
 static struct json_token_t*
 json_get_token(struct json_token_t* tokens, json_size_t capacity, json_size_t index) {
-	return index < capacity ? tokens + index : nullptr;
+	return index < capacity ? tokens + index : 0;
 }
 
 static bool
