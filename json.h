@@ -296,7 +296,8 @@ json_parse_object(const char* buffer, json_size_t length, json_size_t pos,
 		case ',':
 			if (!last || !json_is_valid_token(tokens, capacity, last))
 				return JSON_INVALID_POS;
-			if ((token = json_get_token(tokens, capacity, last)))
+			token = json_get_token(tokens, capacity, last);
+			if (token)
 				token->sibling = *current;
 			last = 0;
 			pos = json_skip_whitespace(buffer, length, pos);
@@ -334,7 +335,8 @@ json_parse_object(const char* buffer, json_size_t length, json_size_t pos,
 			pos = json_parse_value(buffer, length, pos + 1, tokens, capacity, current, simple);
 			pos = json_skip_whitespace(buffer, length, pos);
 			if (simple_string && ((pos < length) && (buffer[pos] != ',') && (buffer[pos] != '}'))) {
-				if ((token = json_get_token(tokens, capacity, last)))
+				token = json_get_token(tokens, capacity, last);
+				if (token)
 					token->sibling = *current;
 				last = 0;
 			}
@@ -362,8 +364,11 @@ json_parse_array(const char* buffer, json_size_t length, json_size_t pos,
 		pos = json_parse_value(buffer, length, pos, tokens, capacity, current, simple);
 		if (pos == JSON_INVALID_POS)
 			return JSON_INVALID_POS;
-		if (last && (token = json_get_token(tokens, capacity, last)))
-			token->sibling = now;
+		if (last) {
+			token = json_get_token(tokens, capacity, last);
+			if (token)
+				token->sibling = now;
+		}
 		last = now;
 		pos = json_skip_whitespace(buffer, length, pos);
 		if (buffer[pos] == ',')
@@ -622,3 +627,15 @@ json_unescape(char* buffer, json_size_t capacity, const char* string, json_size_
 	}
 	return outlength;
 }
+
+#include <string.h>
+
+static bool
+json_string_equal(const char* rhs, size_t rhs_length, const char* lhs, size_t lhs_length) {
+	if (rhs_length && (lhs_length == rhs_length)) {
+		return (memcmp(rhs, lhs, rhs_length) == 0);
+	}
+	return (!rhs_length && !lhs_length);
+}
+
+#define JSON_STRING_CONST(s) (s), (sizeof((s))-1)
