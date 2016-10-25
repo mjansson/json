@@ -111,6 +111,19 @@ json_unescape(char* buffer, json_size_t capacity, const char* string, json_size_
 static json_size_t
 json_escape(char* buffer, json_size_t capacity, const char* string, json_size_t length);
 
+/*! Utility function to do bounded string compare
+\param rhs First string
+\param rhs_length Length of first string in bytes
+\param lhs Second string
+\param lhs_length Length of second string in bytes
+\return true if strings are equal, false if not */
+static bool
+json_string_equal(const char* rhs, size_t rhs_length, const char* lhs, size_t lhs_length);
+
+/*! Utility macro to get both data and length of a constant string expression, like JSON_STRING_CONST("foobar").
+Useful with json_string_equal function: json_string_equal(myptr, mylength, JSON_STRING_CONST("foobar")) */
+#define JSON_STRING_CONST(s) (s), (sizeof((s))-1)
+
 
 // Implementation
 
@@ -637,5 +650,3 @@ json_string_equal(const char* rhs, size_t rhs_length, const char* lhs, size_t lh
 	}
 	return (!rhs_length && !lhs_length);
 }
-
-#define JSON_STRING_CONST(s) (s), (sizeof((s))-1)
