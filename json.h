@@ -251,8 +251,10 @@ json_parse_number(const char* buffer, json_size_t length, json_size_t pos) {
 		char c = buffer[pos];
 		if (json_is_token_delimiter(c))
 			break;
-		else if ((c == '-') && !(start == pos))
-			return JSON_INVALID_POS;
+		if (c == '-') {
+			if (start != pos)
+				return JSON_INVALID_POS;
+		}
 		else if (c == '.') {
 			if (has_dot || has_exp)
 				return JSON_INVALID_POS;
@@ -273,7 +275,7 @@ json_parse_number(const char* buffer, json_size_t length, json_size_t pos) {
 			has_digit = true;
 		++pos;
 	}
-	return pos - start;
+	return has_digit ? (pos - start) : JSON_INVALID_POS;
 }
 
 static json_size_t
