@@ -3,7 +3,7 @@
  * This library provides a in-place JSON/SJSON parser in C99.
  * The latest source code is always available at:
  *
- * https://github.com/rampantpixels/json_lib
+ * https://github.com/rampantpixels/json
  *
  * This library is put in the public domain; you can redistribute
  * it and/or modify it without any restrictions.
@@ -18,6 +18,10 @@ Small in-place JSON parser without any allocation. Entry points for both
 standard JSON and simplified JSON data parsing. All character data must be
 in UTF-8 format.
 
+Strings are not automatically unescaped. Use json_unescape/json_escape to
+perform unescaping and espacing of strings. Unescaping can be done in-place
+to avoid memory allocations.
+
 Simplified JSON as parsed by this library has the following differences
 from standard JSON:
 - The equal sign = is used to define key-value pairs instead of the colon :
@@ -26,7 +30,11 @@ the key to contain either whitespace or the equal sign =
 - Commas are optional in object and array definitions
 - Each SJSON file is always interpreted as a definition for a single object.
 You can think of this as an implicit set of curly quotes { ... } that surround
-the contents of the file */
+the contents of the file
+
+Kudos to Niklas Gray for SJSON syntax,
+http://bitsquid.blogspot.se/2009/10/simplified-json-notation.html
+*/
 
 // Types
 
@@ -120,13 +128,17 @@ json_escape(char* buffer, json_size_t capacity, const char* string, json_size_t 
 static bool
 json_string_equal(const char* rhs, size_t rhs_length, const char* lhs, size_t lhs_length);
 
-/*! Utility macro to get both data and length of a constant string expression, like JSON_STRING_CONST("foobar").
-Useful with json_string_equal function: json_string_equal(myptr, mylength, JSON_STRING_CONST("foobar")) */
+/*! \def JSON_STRING_CONST
+\brief Utility string macro for both data and length */
+/*! Expands to two arguments (data and length) of a constant string expression, like <CODE>JSON_STRING_CONST("foobar")</CODE>.
+Useful with json_string_equal function: <CODE>json_string_equal(myptr, mylength, JSON_STRING_CONST("foobar"))</CODE>.
+Be aware that it evaluates the s expression twice. */
 #define JSON_STRING_CONST(s) (s), (sizeof((s))-1)
 
 
 // Implementation
 
+//! Identifier of invalid position or index
 #define JSON_INVALID_POS ((json_size_t)-1)
 
 static struct json_token_t*
@@ -548,7 +560,8 @@ json_escape(char* buffer, json_size_t capacity, const char* string, json_size_t 
 	return outlength;
 }
 
-#define json_bitmask(numbits) ((1U << (numbits)) - 1)
+//! Define a bitmask with the given number of bits set to 1
+#define JSON_BITMASK(numbits) ((1U << (numbits)) - 1)
 
 static unsigned int
 json_get_num_bytes_as_utf8(unsigned int val) {
@@ -572,8 +585,8 @@ json_encode_utf8(char* str, unsigned int val) {
 	//Get number of _extra_ bytes
 	num = json_get_num_bytes_as_utf8(val) - 1;
 
-	*str++ = (char)((0x80U | (json_bitmask(num) << (7U - num))) |
-	                ((val >> (6U * num)) & json_bitmask(6U - num)));
+	*str++ = (char)((0x80U | (JSON_BITMASK(num) << (7U - num))) |
+	                ((val >> (6U * num)) & JSON_BITMASK(6U - num)));
 	for (j = 1; j <= num; ++j)
 		*str++ = (char)(0x80U | ((val >> (6U * (num - j))) & 0x3F));
 
