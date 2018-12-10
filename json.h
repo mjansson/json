@@ -62,9 +62,9 @@ struct json_token_t {
 	json_size_t id;
 	/*! Length of identifier string. 0 if no identifier string */
 	json_size_t id_length;
-	/*! Value string offset */
+	/*! Value string offset. For object tokens this is the start position of the opening bracket */
 	json_size_t value;
-	/*! Length of value string. 0 if no or empty value string */
+	/*! Length of value string. 0 if no or empty value string. For array tokens this holds number of items in array, and for object tokens it is the length of the entire object bracketed value */
 	json_size_t value_length;
 	/*! Child token index in token array. 0 if no child token */
 	json_size_t child;
@@ -165,17 +165,18 @@ json_set_token_primitive(struct json_token_t* tokens, json_size_t capacity, json
 	}
 }
 
-static void
+static struct json_token_t*
 json_set_token_complex(struct json_token_t* tokens, json_size_t capacity, json_size_t current,
-                       json_type_t type) {
+                       json_type_t type, json_size_t pos) {
 	struct json_token_t* token = json_get_token(tokens, capacity, current);
 	if (token) {
 		token->type = type;
 		token->child = current + 1;
 		token->sibling = 0;
-		token->value = 0;
+		token->value = pos;
 		token->value_length = 0;
 	}
+	return token;
 }
 
 static void
@@ -190,12 +191,12 @@ json_set_token_id(struct json_token_t* tokens, json_size_t capacity, json_size_t
 
 static bool
 json_is_whitespace(char c) {
-	return (c == ' ')  || (c == '\t') || (c == '\n') || (c == '\r');
+	return (c == ' ') || (c == '\t') || (c == '\n') || (c == '\r');
 }
 
 static bool
 json_is_token_delimiter(char c) {
-	return json_is_whitespace(c) || (c == ']')  || (c == '}') || (c == ',');
+	return json_is_whitespace(c) || (c == ']') || (c == '}') || (c == ',');
 }
 
 static json_size_t
@@ -232,7 +233,7 @@ json_parse_string(const char* buffer, json_size_t length, json_size_t pos, bool 
 			switch (buffer[pos]) {
 			// Escaped symbols \X
 			case '\"': case '/': case '\\': case 'b':
-			case 'f' : case 'r': case 'n' : case 't':
+			case 'f': case 'r': case 'n': case 't':
 				break;
 			// Escaped symbol \uXXXX
 			case 'u':
@@ -277,7 +278,7 @@ json_parse_number(const char* buffer, json_size_t length, json_size_t pos) {
 				return JSON_INVALID_POS;
 			has_exp = true;
 			if ((pos + 1) < length) {
-				if ((buffer[pos+1] == '+') || (buffer[pos+1] == '-'))
+				if ((buffer[pos + 1] == '+') || (buffer[pos + 1] == '-'))
 					++pos;
 			}
 		}
@@ -300,7 +301,8 @@ json_parse_value(const char* buffer, json_size_t length, json_size_t pos,
 
 static json_size_t
 json_parse_array(const char* buffer, json_size_t length, json_size_t pos,
-                 struct json_token_t* tokens, json_size_t capacity, json_size_t* current, bool simple);
+                 struct json_token_t* tokens, json_size_t capacity, json_size_t owner,
+                 json_size_t* current, bool simple);
 
 static json_size_t
 json_parse_object(const char* buffer, json_size_t length, json_size_t pos,
@@ -376,14 +378,19 @@ json_parse_object(const char* buffer, json_size_t length, json_size_t pos,
 
 static json_size_t
 json_parse_array(const char* buffer, json_size_t length, json_size_t pos,
-                 struct json_token_t* tokens, json_size_t capacity, json_size_t* current, bool simple) {
+                 struct json_token_t* tokens, json_size_t capacity, json_size_t owner,
+                 json_size_t* current, bool simple) {
+	struct json_token_t* parent = json_get_token(tokens, capacity, owner);
 	struct json_token_t* token;
 	json_size_t now;
 	json_size_t last = 0;
 
 	pos = json_skip_whitespace(buffer, length, pos);
-	if (buffer[pos] == ']')
+	if (buffer[pos] == ']') {
+		if (parent)
+			parent->child = 0;
 		return json_skip_whitespace(buffer, length, ++pos);
+	}
 
 	while (pos < length) {
 		now = *current;
@@ -391,6 +398,8 @@ json_parse_array(const char* buffer, json_size_t length, json_size_t pos,
 		pos = json_parse_value(buffer, length, pos, tokens, capacity, current, simple);
 		if (pos == JSON_INVALID_POS)
 			return JSON_INVALID_POS;
+		if (parent)
+			parent->value_length++;
 		if (last) {
 			token = json_get_token(tokens, capacity, last);
 			if (token)
@@ -412,7 +421,8 @@ json_parse_array(const char* buffer, json_size_t length, json_size_t pos,
 static json_size_t
 json_parse_value(const char* buffer, json_size_t length, json_size_t pos,
                  struct json_token_t* tokens, json_size_t capacity, json_size_t* current, bool simple) {
-	json_size_t string;
+	struct json_token_t* subtoken;
+	json_size_t string, owner;
 	bool simple_string;
 
 	pos = json_skip_whitespace(buffer, length, pos);
@@ -420,15 +430,18 @@ json_parse_value(const char* buffer, json_size_t length, json_size_t pos,
 		char c = buffer[pos++];
 		switch (c) {
 		case '{':
-			json_set_token_complex(tokens, capacity, *current, JSON_OBJECT);
+			subtoken = json_set_token_complex(tokens, capacity, *current, JSON_OBJECT, pos - 1);
 			++(*current);
 			pos = json_parse_object(buffer, length, pos, tokens, capacity, current, simple);
+			if (subtoken && (pos != JSON_INVALID_POS))
+				subtoken->value_length = (pos - subtoken->value);
 			return pos;
 
 		case '[':
-			json_set_token_complex(tokens, capacity, *current, JSON_ARRAY);
+			owner = *current;
+			json_set_token_complex(tokens, capacity, *current, JSON_ARRAY, 0);
 			++(*current);
-			pos = json_parse_array(buffer, length, pos, tokens, capacity, current, simple);
+			pos = json_parse_array(buffer, length, pos, tokens, capacity, owner, current, simple);
 			return pos;
 
 		case '-': case '0': case '1': case '2': case '3': case '4':
@@ -443,15 +456,15 @@ json_parse_value(const char* buffer, json_size_t length, json_size_t pos,
 		case 't':
 		case 'f':
 			if ((c == 't') && (length - pos >= 4) &&
-			        (buffer[pos] == 'r') && (buffer[pos+1] == 'u') && (buffer[pos+2] == 'e') &&
-			        json_is_token_delimiter(buffer[pos+3])) {
+			        (buffer[pos] == 'r') && (buffer[pos + 1] == 'u') && (buffer[pos + 2] == 'e') &&
+				json_is_token_delimiter(buffer[pos + 3])) {
 				json_set_token_primitive(tokens, capacity, *current, JSON_PRIMITIVE, pos - 1, 4);
 				++(*current);
 				return pos + 3;
 			}
 			if ((c == 'f') && (length - pos >= 5) &&
-			        (buffer[pos] == 'a') && (buffer[pos+1] == 'l') && (buffer[pos+2] == 's') &&
-			        (buffer[pos+3] == 'e') && json_is_token_delimiter(buffer[pos+4])) {
+			        (buffer[pos] == 'a') && (buffer[pos + 1] == 'l') && (buffer[pos + 2] == 's') &&
+			        (buffer[pos + 3] == 'e') && json_is_token_delimiter(buffer[pos + 4])) {
 				json_set_token_primitive(tokens, capacity, *current, JSON_PRIMITIVE, pos - 1, 5);
 				++(*current);
 				return pos + 4;
@@ -460,8 +473,16 @@ json_parse_value(const char* buffer, json_size_t length, json_size_t pos,
 				return JSON_INVALID_POS;
 		//Fall through to string handling
 
+		case 'n':
 		case '"':
 		default:
+			if (!simple && (c == 'n') && (length - pos >= 4) &&
+			        (buffer[pos] == 'u') && (buffer[pos + 1] == 'l') && (buffer[pos + 2] == 'l') &&
+			        json_is_token_delimiter(buffer[pos + 3])) {
+				json_set_token_primitive(tokens, capacity, *current, JSON_PRIMITIVE, pos - 1, 4);
+				++(*current);
+				return pos + 3;
+			}
 			if (c != '"') {
 				if (!simple)
 					return JSON_INVALID_POS;
@@ -504,7 +525,7 @@ sjson_parse(const char* buffer, json_size_t size, struct json_token_t* tokens,
 	json_size_t pos = json_skip_whitespace(buffer, size, 0);
 	if ((pos < size) && (buffer[pos] != '{')) {
 		json_set_token_id(tokens, capacity, current, 0, 0);
-		json_set_token_complex(tokens, capacity, current, JSON_OBJECT);
+		json_set_token_complex(tokens, capacity, current, JSON_OBJECT, 0);
 		++current;
 		if (json_parse_object(buffer, size, pos, tokens, capacity, &current, true) == JSON_INVALID_POS)
 			return 0;
@@ -586,7 +607,7 @@ json_encode_utf8(char* str, unsigned int val) {
 	num = json_get_num_bytes_as_utf8(val) - 1;
 
 	*str++ = (char)((0x80U | (JSON_BITMASK(num) << (7U - num))) |
-	                ((val >> (6U * num)) & JSON_BITMASK(6U - num)));
+	         ((val >> (6U * num)) & JSON_BITMASK(6U - num)));
 	for (j = 1; j <= num; ++j)
 		*str++ = (char)(0x80U | ((val >> (6U * (num - j))) & 0x3F));
 
@@ -637,7 +658,7 @@ json_unescape(char* buffer, json_size_t capacity, const char* string, json_size_
 							uival = 10 + (val - 'A');
 						else if ((val >= '0') && (val <= '9'))
 							uival = val - '0';
-						hexval |= uival << (3-j);
+						hexval |= uival << (3 - j);
 					}
 					numbytes = json_get_num_bytes_as_utf8(hexval);
 					if ((outlength + numbytes) < capacity)
