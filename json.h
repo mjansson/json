@@ -1,4 +1,4 @@
-/* json.h  -  JSON/SJSON parser  -  Public Domain  -  2016 Mattias Jansson / Rampant Pixels
+/* json.h  -  JSON/SJSON parser  -  Public Domain
  *
  * This library provides a in-place JSON/SJSON parser in C99.
  * The latest source code is always available at:
@@ -7,9 +7,11 @@
  *
  * This library is put in the public domain; you can redistribute
  * it and/or modify it without any restrictions.
+ *
+ * Author: Mattias Jansson / Rampant Pixels (2016-2018)
+ *
+ * Please consider our Patreon - https://patreon.com/rampantpixels
  */
-
-#pragma once
 
 /*! \file json.h
 \brief JSON/SJSON parser
@@ -32,9 +34,23 @@ the key to contain either whitespace or the equal sign =
 You can think of this as an implicit set of curly quotes { ... } that surround
 the contents of the file
 
+Requires size_t, bool and memcmp to be declared prior to including this
+header. Headers are only included  when compiled as the minimal test case.
+
+To compile the minimal test case, use
+gcc -D JSON_TEST -x c --std=c99 json.h
+
 Kudos to Niklas Gray for SJSON syntax,
 http://bitsquid.blogspot.se/2009/10/simplified-json-notation.html
 */
+
+#ifdef JSON_TEST
+#  include <stdbool.h>
+#  include <stdint.h>
+#  include <string.h>
+#else
+#  pragma once
+#endif
 
 // Types
 
@@ -154,7 +170,7 @@ json_is_valid_token(struct json_token_t* tokens, json_size_t capacity, json_size
 
 static void
 json_set_token_primitive(struct json_token_t* tokens, json_size_t capacity, json_size_t current,
-                         json_type_t type, json_size_t value, json_size_t value_length) {
+                         enum json_type_t type, json_size_t value, json_size_t value_length) {
 	struct json_token_t* token = json_get_token(tokens, capacity, current);
 	if (token) {
 		token->type = type;
@@ -167,7 +183,7 @@ json_set_token_primitive(struct json_token_t* tokens, json_size_t capacity, json
 
 static struct json_token_t*
 json_set_token_complex(struct json_token_t* tokens, json_size_t capacity, json_size_t current,
-                       json_type_t type, json_size_t pos) {
+                       enum json_type_t type, json_size_t pos) {
 	struct json_token_t* token = json_get_token(tokens, capacity, current);
 	if (token) {
 		token->type = type;
@@ -455,9 +471,10 @@ json_parse_value(const char* buffer, json_size_t length, json_size_t pos,
 
 		case 't':
 		case 'f':
+		case 'n':
 			if ((c == 't') && (length - pos >= 4) &&
 			        (buffer[pos] == 'r') && (buffer[pos + 1] == 'u') && (buffer[pos + 2] == 'e') &&
-				json_is_token_delimiter(buffer[pos + 3])) {
+			        json_is_token_delimiter(buffer[pos + 3])) {
 				json_set_token_primitive(tokens, capacity, *current, JSON_PRIMITIVE, pos - 1, 4);
 				++(*current);
 				return pos + 3;
@@ -469,11 +486,17 @@ json_parse_value(const char* buffer, json_size_t length, json_size_t pos,
 				++(*current);
 				return pos + 4;
 			}
+			if ((c == 'n') && (length - pos >= 4) &&
+			        (buffer[pos] == 'u') && (buffer[pos + 1] == 'l') && (buffer[pos + 2] == 'l') &&
+			        json_is_token_delimiter(buffer[pos + 3])) {
+				json_set_token_primitive(tokens, capacity, *current, JSON_PRIMITIVE, pos - 1, 4);
+				++(*current);
+				return pos + 3;
+			}
 			if (!simple)
 				return JSON_INVALID_POS;
 		//Fall through to string handling
 
-		case 'n':
 		case '"':
 		default:
 			if (!simple && (c == 'n') && (length - pos >= 4) &&
@@ -525,10 +548,12 @@ sjson_parse(const char* buffer, json_size_t size, struct json_token_t* tokens,
 	json_size_t pos = json_skip_whitespace(buffer, size, 0);
 	if ((pos < size) && (buffer[pos] != '{')) {
 		json_set_token_id(tokens, capacity, current, 0, 0);
-		json_set_token_complex(tokens, capacity, current, JSON_OBJECT, 0);
+		json_set_token_complex(tokens, capacity, current, JSON_OBJECT, pos);
 		++current;
 		if (json_parse_object(buffer, size, pos, tokens, capacity, &current, true) == JSON_INVALID_POS)
 			return 0;
+		if (capacity)
+			tokens[0].value_length = size - tokens[0].value;
 		return current;
 	}
 	if (json_parse_value(buffer, size, pos, tokens, capacity, &current, true) == JSON_INVALID_POS)
@@ -677,8 +702,6 @@ json_unescape(char* buffer, json_size_t capacity, const char* string, json_size_
 	return outlength;
 }
 
-#include <string.h>
-
 static bool
 json_string_equal(const char* rhs, size_t rhs_length, const char* lhs, size_t lhs_length) {
 	if (rhs_length && (lhs_length == rhs_length)) {
@@ -686,3 +709,142 @@ json_string_equal(const char* rhs, size_t rhs_length, const char* lhs, size_t lh
 	}
 	return (!rhs_length && !lhs_length);
 }
+
+
+#ifdef JSON_TEST
+
+#include <stdio.h>
+
+#define VERIFY_TOKEN(idx, type_, id_, id_len_, val_, val_len_) \
+	if ((tokens[idx].type != (type_)) || (tokens[idx].id != (id_)) || (tokens[idx].id_length != (id_len_)) || \
+		(tokens[idx].value != (val_)) || (tokens[idx].value_length != (val_len_))) { \
+			printf("Invalid token %d (%d, %d, %d, %d, %d)\n", idx, tokens[idx].type, tokens[idx].id, \
+				tokens[idx].id_length, tokens[idx].value, tokens[idx].value_length); \
+			return -1; \
+		} else do {} while(0)
+
+#define VERIFY_TOKEN_ID(idx, type_, idstr, val_, val_len_) \
+	if ((tokens[idx].type != (type_)) || \
+		!json_string_equal(input.str + tokens[idx].id, tokens[idx].id_length, JSON_STRING_CONST(idstr)) || \
+		(tokens[idx].value != (val_)) || (tokens[idx].value_length != (val_len_))) { \
+			printf("Invalid token %d (%d, %d, %d, %d, %d)\n", idx, tokens[idx].type, tokens[idx].id, \
+				tokens[idx].id_length, tokens[idx].value, tokens[idx].value_length); \
+			return -1; \
+		} else do {} while(0)
+
+#define VERIFY_TOKEN_ID_VALUE(idx, type_, idstr, valuestr) \
+	if ((tokens[idx].type != (type_)) || \
+		!json_string_equal(input.str + tokens[idx].id, tokens[idx].id_length, JSON_STRING_CONST(idstr)) || \
+		!json_string_equal(input.str + tokens[idx].value, tokens[idx].value_length, JSON_STRING_CONST(valuestr))) { \
+			printf("Invalid token %d (%d, %d, %d, %d, %d)\n", idx, tokens[idx].type, tokens[idx].id, \
+				tokens[idx].id_length, tokens[idx].value, tokens[idx].value_length); \
+			return -1; \
+		} else do {} while(0)
+
+int
+main(int argc, char** argv) {
+	struct json_token_t tokens[32];
+	memset(tokens, 0, sizeof(tokens));
+
+	struct json_input {
+		const char* str;
+		size_t len;
+	};
+	{
+		struct json_input input = {JSON_STRING_CONST("\
+	{\"foo\" :{\"subobj\": false ,\
+		\"val\" :1.2345e45 \
+	} ,\"arr\" :[ \
+		\"string\",\
+		-.34523e-78,[\
+			true, \
+			\"subarr [] {} =:\", { \"key\": []}, [] \
+		],[false],\
+		{ \t\
+			\"final\" : null \
+		}\
+		,{ } , \
+		 1234.43E+123 \
+	]\
+	}")};
+
+		json_size_t num_tokens =
+			json_parse(input.str, input.len, tokens, sizeof(tokens) / sizeof(tokens[0]));
+
+		if (num_tokens != 19) {
+			printf("Invalid number of tokens: %d\n", (int)num_tokens);
+			return -1;
+		}
+
+		VERIFY_TOKEN(0, JSON_OBJECT, 0, 0, 1, input.len - 1);
+		VERIFY_TOKEN_ID(1, JSON_OBJECT, "foo", 9, 39);
+		VERIFY_TOKEN_ID_VALUE(2, JSON_PRIMITIVE, "subobj", "false");
+		VERIFY_TOKEN_ID_VALUE(3, JSON_PRIMITIVE, "val", "1.2345e45");
+		VERIFY_TOKEN_ID(4, JSON_ARRAY, "arr", 0, 7);
+		VERIFY_TOKEN_ID_VALUE(5, JSON_STRING, "", "string");
+		VERIFY_TOKEN_ID_VALUE(6, JSON_PRIMITIVE, "", "-.34523e-78");
+		VERIFY_TOKEN(7, JSON_ARRAY, 0, 0, 0, 4);
+		VERIFY_TOKEN_ID_VALUE(8, JSON_PRIMITIVE, "", "true");
+		VERIFY_TOKEN_ID_VALUE(9, JSON_STRING, "", "subarr [] {} =:");
+		VERIFY_TOKEN(10, JSON_OBJECT, 0, 0, 116, 12);
+		VERIFY_TOKEN_ID_VALUE(11, JSON_ARRAY, "key", "");
+		VERIFY_TOKEN(12, JSON_ARRAY, 0, 0, 0, 0);
+		VERIFY_TOKEN(13, JSON_ARRAY, 0, 0, 0, 1);
+		VERIFY_TOKEN_ID_VALUE(14, JSON_PRIMITIVE, "", "false");
+		VERIFY_TOKEN(15, JSON_OBJECT, 0, 0, 147, 24);
+		VERIFY_TOKEN_ID_VALUE(16, JSON_PRIMITIVE, "final", "null");
+		VERIFY_TOKEN(17, JSON_OBJECT, 0, 0, 174, 3);
+		VERIFY_TOKEN_ID_VALUE(18, JSON_PRIMITIVE, "", "1234.43E+123");
+	}
+	{
+		struct json_input input = {JSON_STRING_CONST("\
+	foo ={subobj= false \
+		val =1.2345e45 \
+	} arr =[\
+		string\
+		-.34523e-78 [\
+			true\
+			\"subarr [] {} =:\" { key: []} []\
+		] [false] \
+		{ \t\
+			final = null\
+		}\
+		{ }  \
+		1234.43E+123 \
+	]\
+	")};
+
+		json_size_t num_tokens =
+			sjson_parse(input.str, input.len, tokens, sizeof(tokens) / sizeof(tokens[0]));
+
+		if (num_tokens != 19) {
+			printf("Invalid number of tokens: %d\n", (int)num_tokens);
+			return -1;
+		}
+
+		VERIFY_TOKEN(0, JSON_OBJECT, 0, 0, 1, input.len - 1);
+		VERIFY_TOKEN_ID(1, JSON_OBJECT, "foo", 6, 34);
+		VERIFY_TOKEN_ID_VALUE(2, JSON_PRIMITIVE, "subobj", "false");
+		VERIFY_TOKEN_ID_VALUE(3, JSON_PRIMITIVE, "val", "1.2345e45");
+		VERIFY_TOKEN_ID(4, JSON_ARRAY, "arr", 0, 7);
+		VERIFY_TOKEN_ID_VALUE(5, JSON_STRING, "", "string");
+		VERIFY_TOKEN_ID_VALUE(6, JSON_PRIMITIVE, "", "-.34523e-78");
+		VERIFY_TOKEN(7, JSON_ARRAY, 0, 0, 0, 4);
+		VERIFY_TOKEN_ID_VALUE(8, JSON_PRIMITIVE, "", "true");
+		VERIFY_TOKEN_ID_VALUE(9, JSON_STRING, "", "subarr [] {} =:");
+		VERIFY_TOKEN(10, JSON_OBJECT, 0, 0, 98, 10);
+		VERIFY_TOKEN_ID_VALUE(11, JSON_ARRAY, "key", "");
+		VERIFY_TOKEN(12, JSON_ARRAY, 0, 0, 0, 0);
+		VERIFY_TOKEN(13, JSON_ARRAY, 0, 0, 0, 1);
+		VERIFY_TOKEN_ID_VALUE(14, JSON_PRIMITIVE, "", "false");
+		VERIFY_TOKEN(15, JSON_OBJECT, 0, 0, 125, 21);
+		VERIFY_TOKEN_ID_VALUE(16, JSON_PRIMITIVE, "final", "null");
+		VERIFY_TOKEN(17, JSON_OBJECT, 0, 0, 148, 3);
+		VERIFY_TOKEN_ID_VALUE(18, JSON_PRIMITIVE, "", "1234.43E+123");
+	}
+	printf("Minimal tests passed\n");
+	return 0;
+}
+
+#endif
+

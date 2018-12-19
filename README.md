@@ -27,6 +27,12 @@ the key to contain either whitespace or the equal sign =
 You can think of this as an implicit set of curly quotes { ... } that surround
 the contents of the file
 
+Requires size_t, bool and memcmp to be declared prior to including this
+header. Headers are only included  when compiled as the minimal test case.
+
+To compile the minimal test case, use
+gcc -D JSON_TEST -x c --std=c99 json.h
+
 Kudos to Niklas Gray for SJSON syntax,
 http://bitsquid.blogspot.se/2009/10/simplified-json-notation.html
 
