@@ -3,14 +3,12 @@
  * This library provides a in-place JSON/SJSON parser in C99.
  * The latest source code is always available at:
  *
- * https://github.com/rampantpixels/json
+ * https://github.com/mjansson/json
  *
  * This library is put in the public domain; you can redistribute
  * it and/or modify it without any restrictions.
  *
- * Author: Mattias Jansson / Rampant Pixels (2016-2018)
- *
- * Please consider our Patreon - https://patreon.com/rampantpixels
+ * Author: Mattias Jansson (Twitter - @maniccoder)
  */
 
 /*! \file json.h
