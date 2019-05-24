@@ -497,13 +497,6 @@ json_parse_value(const char* buffer, json_size_t length, json_size_t pos,
 
 		case '"':
 		default:
-			if (!simple && (c == 'n') && (length - pos >= 4) &&
-			        (buffer[pos] == 'u') && (buffer[pos + 1] == 'l') && (buffer[pos + 2] == 'l') &&
-			        json_is_token_delimiter(buffer[pos + 3])) {
-				json_set_token_primitive(tokens, capacity, *current, JSON_PRIMITIVE, pos - 1, 4);
-				++(*current);
-				return pos + 3;
-			}
 			if (c != '"') {
 				if (!simple)
 					return JSON_INVALID_POS;
