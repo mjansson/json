@@ -447,8 +447,12 @@ json_parse_value(const char* buffer, json_size_t length, json_size_t pos,
 			subtoken = json_set_token_complex(tokens, capacity, *current, JSON_OBJECT, pos - 1);
 			++(*current);
 			pos = json_parse_object(buffer, length, pos, tokens, capacity, current, simple);
-			if (subtoken && (pos != JSON_INVALID_POS))
-				subtoken->value_length = (pos - subtoken->value);
+			if (subtoken) {
+				if (pos != JSON_INVALID_POS)
+					subtoken->value_length = (pos - subtoken->value);
+				if (subtoken->child == *current)
+					subtoken->child = 0;
+			}
 			return pos;
 
 		case '[':
