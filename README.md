@@ -3,6 +3,8 @@ In-place JSON/SJSON parser implemented in a single header file. No memory alloca
 
 Created by Mattias Jansson ([@maniccoder](https://twitter.com/maniccoder))
 
+Discord server for discussions https://discord.gg/M8BwTQrt6c
+
 This library is put in the public domain; you can redistribute it and/or modify it without any restrictions.
 
 # Overview
